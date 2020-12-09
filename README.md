@@ -8,5 +8,5 @@ Folder contains:
 
 * [database_comparison](database_comparison): database comparison reports (see .md files)
 
-* [jsd_analysis](analysis/jsd_analysis.md): JSD analysis
+* [jsd_analysis](jsd_analysis/jsd_analysis.md): JSD analysis
 
