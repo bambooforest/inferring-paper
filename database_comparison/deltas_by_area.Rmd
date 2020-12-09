@@ -1,0 +1,349 @@
+---
+title: "Get greatest deltas in segment coverage by macroarea"
+author: "Steven Moran\n"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+bibliography: '../bibliography/references.bib'
+output:
+  github_document:
+  pandoc_args: --webtex
+---
+
+```{r load_libraries, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(knitr)
+library(xtable)
+```
+
+# Overview
+
+This script calculates the frequency of segments in [PHOIBLE](https://phoible.org/) [@phoible] by macroarea and the differences between the two.
+
+Load the PHOIBLE development data. For reproducibility purposes, we use use the PHOIBLE respository at branch [cf51223](https://github.com/phoible/dev/tree/cf5122362b2b85e9724474dbddd67291a442b8fa).
+
+```{r}
+phoible <- read_csv(url("https://raw.githubusercontent.com/phoible/dev/cf5122362b2b85e9724474dbddd67291a442b8fa/data/phoible.csv"), col_types = c(InventoryID = "i", Marginal = "l", .default = "c"))
+```
+
+Load the [Glottolog data](https://glottolog.org/meta/downloads) [@glottolog], which contains the macroarea classifications for language.
+
+```{r}
+glottolog <- read_csv("https://cdstar.shh.mpg.de/bitstreams/EAEA0-D501-DBB8-65C4-0/languages_and_dialects_geo.csv")
+head(glottolog)
+```
+
+Merge the datasets together.
+
+```{r}
+merged <- left_join(phoible, glottolog, by = c("Glottocode" = "glottocode"))
+```
+
+
+Generate the total segment percentages.
+
+```{r}
+totals <- merged %>%
+  select(InventoryID, Phoneme) %>%
+  group_by(Phoneme) %>%
+  summarize(count = n())
+totals$phoible_freq <- totals$count / length(unique(phoible$InventoryID))
+```
+
+Generate the segment percentages by macroarea.
+
+```{r}
+macros <- merged %>% select(InventoryID, macroarea, Phoneme, SegmentClass)
+```
+
+Note there are some NAs in the data, i.e. the Glottolog data doesn't contain information on data points in PHOIBLE.
+
+```{r}
+table(macros$macroarea, exclude = FALSE)
+```
+
+There are 717 *segments* that belong to languages that are NA. Let's identify which data points are NA.
+
+```{r}
+missing_areas <- macros %>%
+  filter(is.na(macroarea)) %>%
+  select(InventoryID) %>%
+  distinct()
+missing_langs <- phoible %>% filter(InventoryID %in% missing_areas$InventoryID)
+missing_langs %>%
+  select(InventoryID, Glottocode, ISO6393, LanguageName) %>%
+  distinct() %>%
+  kable()
+```
+
+There are 16 data points, but only six different ISO 639-3 codes, i.e. languages. Since there are so few, we simply drop them.
+
+```{r}
+macros <- macros %>% filter(!is.na(macroarea))
+rownames(macros) <- NULL
+```
+
+Now, get segment frequencies by area.
+
+```{r}
+africa <- macros %>% filter(macroarea == "Africa")
+total <- length(unique(africa$InventoryID))
+africa <- africa %>%
+  group_by(Phoneme, SegmentClass) %>%
+  summarize(count = n())
+africa$freq <- africa$count / total
+africa$macroarea <- "Africa"
+
+australia <- macros %>% filter(macroarea == "Australia")
+total <- length(unique(australia$InventoryID))
+australia <- australia %>%
+  group_by(Phoneme, SegmentClass) %>%
+  summarize(count = n())
+australia$freq <- australia$count / total
+australia$macroarea <- "Australia"
+
+eurasia <- macros %>% filter(macroarea == "Eurasia")
+total <- length(unique(eurasia$InventoryID))
+eurasia <- eurasia %>%
+  group_by(Phoneme, SegmentClass) %>%
+  summarize(count = n())
+eurasia$freq <- eurasia$count / total
+eurasia$macroarea <- "Eurasia"
+
+na <- macros %>% filter(macroarea == "North America")
+total <- length(unique(na$InventoryID))
+na <- na %>%
+  group_by(Phoneme, SegmentClass) %>%
+  summarize(count = n())
+na$freq <- na$count / total
+na$macroarea <- "North America"
+
+papunesia <- macros %>% filter(macroarea == "Papunesia")
+total <- length(unique(papunesia$InventoryID))
+papunesia <- papunesia %>%
+  group_by(Phoneme, SegmentClass) %>%
+  summarize(count = n())
+papunesia$freq <- papunesia$count / total
+papunesia$macroarea <- "Papunesia"
+
+sa <- macros %>% filter(macroarea == "South America")
+total <- length(unique(sa$InventoryID))
+sa <- sa %>%
+  group_by(Phoneme, SegmentClass) %>%
+  summarize(count = n())
+sa$freq <- sa$count / total
+sa$macroarea <- "South America"
+```
+
+An anonymous reviewer notes:
+
+>>> Table 1. It is unclear to me why, in Tables 1 and 5-6, we are given the delta with respect to PHOIBLE and not with respect to PHOIBLE for all regions except that region being focused upon. Or perhaps this was done but not expressed clearly. If the frequency of phoneme /x/ is y in North America, for example, the delta could be quite different than if /x/ is y in Eurasia or Africa, because those continents constitute such a big chunk of PHOIBLE. That’s reasonable, but don’t we want to get a sense of how these regions contrast to other regions? That seems more intuitively useful. Perhaps both could be presented in the tables?
+
+So we expand the counts to include PHOIBLE worldwide counts minus the the counts in each macroarea.
+
+```{r}
+phoible_no_africa <- macros %>% filter(macroarea != "Africa")
+total <- length(unique(phoible_no_africa$InventoryID))
+phoible_no_africa <- phoible_no_africa %>%
+  group_by(Phoneme, SegmentClass) %>%
+  summarize(count = n())
+phoible_no_africa$freq <- phoible_no_africa$count / total
+phoible_no_africa$macroarea <- "Africa"
+
+phoible_no_australia <- macros %>% filter(macroarea != "Australia")
+total <- length(unique(phoible_no_australia$InventoryID))
+phoible_no_australia <- phoible_no_australia %>%
+  group_by(Phoneme, SegmentClass) %>%
+  summarize(count = n())
+phoible_no_australia$freq <- phoible_no_australia$count / total
+phoible_no_australia$macroarea <- "Australia"
+
+phoible_no_eurasia <- macros %>% filter(macroarea != "Eurasia")
+total <- length(unique(phoible_no_eurasia$InventoryID))
+phoible_no_eurasia <- phoible_no_eurasia %>%
+  group_by(Phoneme, SegmentClass) %>%
+  summarize(count = n())
+phoible_no_eurasia$freq <- phoible_no_eurasia$count / total
+phoible_no_eurasia$macroarea <- "Eurasia"
+
+phoible_no_na <- macros %>% filter(macroarea != "North America")
+total <- length(unique(phoible_no_na$InventoryID))
+phoible_no_na <- phoible_no_na %>%
+  group_by(Phoneme, SegmentClass) %>%
+  summarize(count = n())
+phoible_no_na$freq <- phoible_no_na$count / total
+phoible_no_na$macroarea <- "North America"
+
+phoible_no_papunesia <- macros %>% filter(macroarea != "Papunesia")
+total <- length(unique(phoible_no_papunesia$InventoryID))
+phoible_no_papunesia <- phoible_no_papunesia %>%
+  group_by(Phoneme, SegmentClass) %>%
+  summarize(count = n())
+phoible_no_papunesia$freq <- phoible_no_papunesia$count / total
+phoible_no_papunesia$macroarea <- "Papunesia"
+
+phoible_no_sa <- macros %>% filter(macroarea != "South America")
+total <- length(unique(phoible_no_sa$InventoryID))
+phoible_no_sa <- phoible_no_sa %>%
+  group_by(Phoneme, SegmentClass) %>%
+  summarize(count = n())
+phoible_no_sa$freq <- phoible_no_sa$count / total
+phoible_no_sa$macroarea <- "South America"
+```
+
+
+Drop the count and rbind them the area-specific dataframes.
+
+```{r}
+africa <- africa %>% select(macroarea, Phoneme, SegmentClass, freq)
+australia <- australia %>% select(macroarea, Phoneme, SegmentClass, freq)
+eurasia <- eurasia %>% select(macroarea, Phoneme, SegmentClass, freq)
+papunesia <- papunesia %>% select(macroarea, Phoneme, SegmentClass, freq)
+na <- na %>% select(macroarea, Phoneme, SegmentClass, freq)
+sa <- sa %>% select(macroarea, Phoneme, SegmentClass, freq)
+
+all <- bind_rows(africa, australia, eurasia, papunesia, na, sa)
+```
+
+And again for the PHOIBLE minus macroarea counts.
+
+```{r}
+phoible_no_africa <- phoible_no_africa %>% select(macroarea, Phoneme, SegmentClass, freq)
+phoible_no_australia <- phoible_no_australia %>% select(macroarea, Phoneme, SegmentClass, freq)
+phoible_no_eurasia <- phoible_no_eurasia %>% select(macroarea, Phoneme, SegmentClass, freq)
+phoible_no_papunesia <- phoible_no_papunesia %>% select(macroarea, Phoneme, SegmentClass, freq)
+phoible_no_na <- phoible_no_na %>% select(macroarea, Phoneme, SegmentClass, freq)
+phoible_no_sa <- phoible_no_sa %>% select(macroarea, Phoneme, SegmentClass, freq)
+
+phoible_no_all <- bind_rows(phoible_no_africa, phoible_no_australia, phoible_no_eurasia, phoible_no_papunesia, phoible_no_na, phoible_no_sa)
+phoible_no_all <- phoible_no_all %>% rename(freq_phoible_no_macroarea = freq)
+```
+
+
+Get delta between phoneme frequencies by area.
+
+```{r}
+totals <- totals %>% select(Phoneme, phoible_freq)
+all <- left_join(all, totals, by = c("Phoneme" = "Phoneme"))
+all$delta <- all$freq - all$phoible_freq
+```
+
+Now we need to add in the frequency and deltas for PHOIBLE without each macroarea.
+
+```{r}
+all <- left_join(all, phoible_no_all)
+```
+
+This introduces NAs because we removed macroareas that contain segments that are not found in any other macroarea, e.g. certain complex tones only found in Africa.
+
+
+```{r}
+macroarea_specific_segments <- all %>% filter(is.na(freq_phoible_no_macroarea))
+write_csv(macroarea_specific_segments, "macroarea_specific_segments.csv")
+```
+
+Replace NAs with zero.
+
+```{r}
+all <- all %>% mutate(freq_phoible_no_macroarea = replace_na(freq_phoible_no_macroarea, 0))
+```
+
+Get the delta between phoneme frequencies by area without those areas.
+
+```{r}
+all$delta_no_macroarea <- all$freq - all$freq_phoible_no_macroarea
+```
+
+# Some descriptive statistics
+
+Where are the largest deltas by area?
+
+```{r}
+all %>%
+  group_by(macroarea) %>%
+  slice_max(order_by = delta, n = 10) %>%
+  kable()
+```
+
+
+Obstruents in South America (Table 1 in the paper).
+
+```{r}
+voiced_obstruents <- c("b", "d", "ɡ", "β", "v", "ð", "z", "ʒ", "ɣ")
+all %>%
+  filter(macroarea == "South America") %>%
+  filter(Phoneme %in% voiced_obstruents) %>%
+  slice(match(voiced_obstruents, Phoneme)) %>%
+  kable()
+```
+
+```{r}
+all %>%
+  group_by(macroarea) %>%
+  slice_max(order_by = delta, n = 10) %>%
+  kable()
+```
+
+```{r}
+all %>%
+  group_by(macroarea) %>%
+  slice_min(order_by = delta, n = 10) %>%
+  kable()
+```
+
+```{r}
+pos <- all %>%
+  group_by(macroarea) %>%
+  filter(SegmentClass == "consonant") %>%
+  slice_max(order_by = delta, n = 10)
+pos %>% kable()
+```
+
+```{r}
+neg <- all %>%
+  group_by(macroarea) %>%
+  filter(SegmentClass == "consonant") %>%
+  slice_min(order_by = delta, n = 10)
+neg %>% kable()
+```
+
+# Tables
+
+This code generates tables for the appendix in the paper.
+
+Sounds overrepresented with respect to the global mean, by macroaarea.
+
+```{r}
+pos <- pos %>% select(macroarea, Phoneme, freq, phoible_freq, delta, freq_phoible_no_macroarea, delta_no_macroarea)
+
+add.to.row <- list(pos = list(0), command = NULL)
+command <- paste0(
+  "\\hline\n\\endhead\n",
+  "\\hline\n",
+  "\\multicolumn{", dim(df)[2] + 1, "}{l}",
+  "{\\footnotesize Continued on next page}\n",
+  "\\endfoot\n",
+  "\\endlastfoot\n"
+)
+add.to.row$command <- command
+
+print(xtable(pos), hline.after = c(-1), add.to.row = add.to.row, tabular.environment = "longtable", include.rownames = FALSE)
+```
+
+Sounds underrepresented with respect to the global mean, by macroaarea.
+
+```{r}
+neg <- neg %>% select(macroarea, Phoneme, freq, phoible_freq, delta, freq_phoible_no_macroarea, delta_no_macroarea)
+print(xtable(neg), hline.after = c(-1), add.to.row = add.to.row, tabular.environment = "longtable", include.rownames = FALSE)
+```
+
+
+```{r}
+library(xtable)
+print(xtable(all %>% group_by(macroarea) %>% slice_max(order_by = delta, n = 10)))
+```
+
+```{r}
+print(xtable(all %>% group_by(macroarea) %>% slice_min(order_by = delta, n = 10)))
+```
+
+
+# References

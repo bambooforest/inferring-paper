@@ -1,0 +1,658 @@
+---
+title: "Data prep for JSD analysis with PHOIBLE, BDPROTO and SegBo"
+author: "Steven Moran\n"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+bibliography: '../bibliography/references.bib'
+output:
+  github_document:
+  pandoc_args: --webtex
+---
+
+```{r load_libraries, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(knitr)
+```
+
+# Overview
+
+This script create various data frames from the [PHOIBLE Online](https://phoible.org/) [@phoible], [BDPROTO](https://github.com/bdproto/bdproto) [@marsico_bdproto_2018;@Moran_etal2020], [SegBo](https://github.com/segbo-db/segbo) [@grossman_etal2020_segbo] datasets for Jensen-Shannon divergence [analysis](../analysis/jsd_testing.md).
+
+In each of the three databases, inventories and borrowed segments were interpreted by experts. Because linguists tend to differ in their idiosyncratic use of phonetic and phonemic transcription practices, segments in each database were codified according to standardized Unicode conventions [@MoranCysouw2018] for the International Phonetic Alphabet [@IPA2015] and typologized into a [well-defined phonetic notational convention](http://phoible.github.io/conventions/).
+
+To make the data from the three resources comparable, we had to extend the datasets to include additional metadata not currently available in these resources. For example, to compare language family level phonological inventories in BDPROTO against the current daughter languages of those families represented in PHOIBLE, we had to code the data points in BDPROTO for language family "root"''" Glottolog codes ("Glottocode") [@glottolog], when they are available. For example, BDPROTO contains multiple reconstructions for intermediate reconstructions of Indo-European, e.g.\ Proto-Germanic, Proto-Italic, Proto-Slavic. Each reconstruction is situated within the larger Indo-European language family tree. As such, we tagged each intermediate reconstruction with a Glottocode (e.g.\ Proto-Germanic is assigned [germ1287](https://glottolog.org/resource/languoid/id/germ1287), but also its "LanguageFamilyRoot" Glottocode, i.e. Indo-European [indo1319](https://glottolog.org/resource/languoid/id/indo1319). This allows us not only to compare segments and inventories from the daughter languages and their reconstructed proto-language, but it also us to randomly sample from the pool of languages within a particular branch in the language phylogeny. The latter is a first step towards addressing temporal bias. We discuss our random sampling procedures in the Methods section of our paper. Tagging each database for family-level Glottocodes also allows us to take the intersection between BDPROTO and PHOIBLE, so that we can not only compare the distribution of segments in both full language samples, but also just between the language families that they share.
+
+The three datasets used in our paper were also expanded to include a geographic classification based on so-called macro-areas, as defined in [Glottolog](https://glottolog.org/) [@glottolog]. These include Africa, Australia, Eurasia, North America, South America, and Papunesia (cf. @hammarstrom2014some). Comparative linguists use macro-area categories to identify or rule out language contact as a factor in the typological distribution of linguistic features. Languages are the way they are today due to two factors: genealogical descent, i.e. the aspects of a language, such as its phonological inventory or grammatical properties, are passed from one generation to the next; and language contact, i.e. interaction between different language speaking groups can result in the exchange of linguistic material through processes such as lexical and grammatical borrowing. Whereas the former factor can be investigated by applying the historical-comparative method to modern-day vocabularies to reconstruct past languages and cultures, the latter factor is more difficult because of the lack of information on human contact patterns in the historical record (and in particular what those different groups may have spoken, since in pre-history speech leaves no archaeological traces). Nevertheless, language contact is crucial for the evolutionary understanding how languages have become the way they are today. Hence, when undertaking statistical inference on linguistic features from large-scale databases, macro-areas are often taken into account as a random factor in statistical models to account for issues such as auto-correlation, e.g. @Blasi_etal2019.
+
+Lastly, the data preparation simply involved extracting various data frames from the three datasets for analysis. For example, one dataframe contains all languages' segments, their language families, and the macro-areas areas in which they are spoken per database. This allows us to resample the datasets at different levels, e.g. one language per family, one segment per language, etc. Another dataframe includes simply the number of counts per segment per database and their probability of occurrence in each dataset. These data are used as input to the methods we use, including Jensen-Shannon divergence, to measure the difference between the probability distribution of segments in the different databases. In the next Section, we discuss the methods we use for comparative analysis.
+
+
+# Data for resampling: all segments, with families and macroareas
+
+```{r}
+phoible <- read_csv(url("https://github.com/phoible/dev/blob/master/data/phoible.csv?raw=true"), col_types = c(InventoryID = "i", Marginal = "l", .default = "c"))
+
+load("./glottolog-families-isolates.Rdata")
+
+# Add the ISO data
+phoible_enriched <- merge(phoible, families.glottocodes[, c("iso639P3code", "family_id")], by.x = "ISO6393", by.y = "iso639P3code")
+
+# Add in the macroareas
+languages.geo <- ungroup(languages.geo)
+geo <- languages.geo %>% select(isocodes, macroarea)
+phoible_enriched <- left_join(phoible_enriched, geo, by = c("ISO6393" = "isocodes"))
+
+# Check that there are no NAs
+phoible_enriched %>% filter(is.na(macroarea))
+phoible_enriched %>% filter(macroarea == "")
+table(phoible_enriched$macroarea, exclude = FALSE)
+
+# Get all segment values
+segment_value <- phoible %>%
+  select(Phoneme, SegmentClass) %>%
+  distinct()
+
+# We have some duplicates to clean up...
+phoible_enriched %>%
+  select(InventoryID, Phoneme) %>%
+  group_by(InventoryID, Phoneme) %>%
+  filter(n() > 1)
+
+# Clean up
+rm(phoible, languages.geo, isolates, families.counts, families.glottocodes, geo)
+```
+
+```{r}
+# load and manipulate bdproto
+load("bdproto.Rdata")
+bdproto <- inventories
+
+# Let's exlude the questionable language families, e.g. Nostratic
+exclude <- read_csv("what_to_exclude.csv")
+bdproto <- left_join(bdproto, exclude)
+bdproto <- bdproto %>% filter(!Exclude)
+
+# Let's do some column renaming for convenience sake
+bdproto <- bdproto %>% rename(family_id = FamilyID)
+bdproto <- bdproto %>% rename(InventoryID = BdprotoID)
+bdproto <- bdproto %>% rename(macroarea = Macroarea)
+
+# Check that the macroareas are sane
+table(bdproto$macroarea, exclude = FALSE)
+
+# Any dupliccate segments?
+bdproto %>%
+  select(InventoryID, Phoneme) %>%
+  group_by(InventoryID, Phoneme) %>%
+  filter(n() > 1)
+
+# Clean up
+rm(exclude, inventories)
+```
+
+```{r}
+# load and extend segbo
+segbo <- read_csv("segbo_with_glottolog.csv")
+segbo <- segbo %>% rename(Phoneme = BorrowedSound)
+extra <- read_csv("segbo_missing_codes.csv")
+
+# Quick hack to get in the hand curated codes
+library(ddpcr)
+segbo_enriched <- merge_dfs_overwrite_col(segbo, extra, cols = "family_id", bycol = "LanguageName")
+rm(segbo, extra)
+
+# Add the macroareas
+load("./glottolog-families-isolates.Rdata")
+languages.geo <- as.data.frame(ungroup(languages.geo))
+macroareas <- languages.geo %>% select(glottocode, macroarea)
+
+# Some are NAs from the input / glottolog data inclusion
+table(segbo_enriched$macroarea, exclude = FALSE)
+segbo_enriched %>%
+  select(InventoryID, Glottocode, macroarea) %>%
+  distinct() %>%
+  filter(is.na(macroarea))
+
+# We fixed these for the time being by hand
+missing_codes_for_macroarea <- read_csv("segbo_update_macroareas.csv")
+missing_codes_for_macroarea <- missing_codes_for_macroarea %>% select(InventoryID, macroarea)
+segbo_enriched <- merge_dfs_overwrite_col(segbo_enriched, missing_codes_for_macroarea, cols = "macroarea", bycol = "InventoryID")
+
+# Any NAs left? Should be no.
+table(segbo_enriched$macroarea, exclude = FALSE)
+
+# Any dupliccate segments? Nope
+segbo_enriched %>%
+  select(InventoryID, Phoneme) %>%
+  group_by(InventoryID, Phoneme) %>%
+  filter(n() > 1)
+
+# Clean up
+rm(families.counts, families.glottocodes, isolates, languages.geo, macroareas, missing_codes_for_macroarea)
+```
+
+Let's combine them. If all the columns are the same.
+
+```{r}
+# p.cut <- phoible_enriched %>% select(InventoryID, Glottocode, family_id, Phoneme, macroarea)
+# p.cut$Database <- "phoible"
+# p.cut$InventoryID <- paste0(p.cut$InventoryID, "_phoible")
+
+# b.cut <- bdproto %>% select(InventoryID, Glottocode, family_id, Phoneme, macroarea) %>% filter(!is.na(Glottocode))
+# b.cut$Database <- "bdproto"
+# b.cut$InventoryID <- paste0(b.cut$InventoryID, "_bdproto")
+
+# s.cut <- segbo_enriched %>% select(InventoryID, Glottocode, family_id, Phoneme, macroarea)
+# s.cut$Database <- "segbo"
+# s.cut$InventoryID <- paste0(s.cut$InventoryID, "_segbo")
+#
+# If the columns are the same
+# all_dbs_all_segments_temp <- do.call("rbind", list(p.cut, b.cut, s.cut))
+
+# Any duplidate Phonemes per source?
+# all_dbs_all_segments_temp %>% select(InventoryID, Database, Phoneme) %>% group_by(InventoryID, Phoneme) %>% filter(n()>1) %>% arrange(InventoryID, Phoneme)
+```
+
+Let's combine them. Here we add additional columns.
+
+```{r}
+p.cut <- phoible_enriched %>% select(InventoryID, Glottocode, family_id, Phoneme, macroarea, SegmentClass)
+p.cut$Database <- "phoible"
+p.cut$InventoryID <- paste0(p.cut$InventoryID, "_phoible")
+p.cut$InventoryType <- "all"
+
+b.cut <- bdproto %>%
+  select(InventoryID, Glottocode, family_id, Phoneme, macroarea, InventoryType) %>%
+  filter(!is.na(Glottocode))
+b.cut$Database <- "bdproto"
+b.cut$InventoryID <- paste0(b.cut$InventoryID, "_bdproto")
+
+s.cut <- segbo_enriched %>% select(InventoryID, Glottocode, family_id, Phoneme, macroarea)
+s.cut$Database <- "segbo"
+s.cut$InventoryID <- paste0(s.cut$InventoryID, "_segbo")
+s.cut$InventoryType <- NA
+
+# If the columns are different and extended with additional database-specific stuff, then use `bind_rows`
+all_dbs_all_segments <- bind_rows(p.cut, b.cut)
+all_dbs_all_segments <- bind_rows(all_dbs_all_segments, s.cut)
+
+# Add in the missing segment classes
+all_dbs_all_segments <- merge_dfs_overwrite_col(all_dbs_all_segments, segment_value, cols = "SegmentClass", bycol = "Phoneme")
+
+# Fix the missing ones by hand
+missing_segment_classes <- read_csv("missing_segment_classes2.csv")
+all_dbs_all_segments <- merge_dfs_overwrite_col(all_dbs_all_segments, missing_segment_classes, cols = "SegmentClass", bycol = "Phoneme")
+
+# Any duplidate phonemes per source?
+all_dbs_all_segments %>%
+  select(InventoryID, Database, Phoneme) %>%
+  group_by(InventoryID, Phoneme) %>%
+  filter(n() > 1) %>%
+  arrange(InventoryID, Phoneme)
+table(all_dbs_all_segments$SegmentClass, exclude = FALSE)
+
+# Check that nothing is weird
+all_dbs_all_segments %>%
+  filter(is.na(Glottocode)) %>%
+  select(Glottocode, Database) %>%
+  distinct()
+all_dbs_all_segments %>% filter(is.na(Phoneme))
+all_dbs_all_segments %>% filter(is.na(macroarea))
+all_dbs_all_segments %>% filter(is.na(SegmentClass))
+
+# Clean up
+rm(p.cut, b.cut, s.cut, phoible_enriched, segbo_enriched, bdproto, missing_segment_classes)
+```
+
+
+# All segments
+
+Let's create a dataframe such that columns are segments, rows are databases, and cells are counts (with zeros for segments that don't appear in one or other database) for *ALL* segments in each database.
+
+```{r}
+# load phoible
+# load("./phoible.RData")
+phoible <- read_csv(url("https://github.com/phoible/dev/blob/master/data/phoible.csv?raw=true"), col_types = c(InventoryID = "i", Marginal = "l", .default = "c"))
+```
+
+```{r}
+# load and manipulate bdproto
+load("bdproto.Rdata")
+bdproto <- inventories
+
+# Let's exlude the questionable language families, e.g. Nostratic
+exclude <- read_csv("what_to_exclude.csv")
+bdproto <- left_join(bdproto, exclude)
+bdproto <- bdproto %>% filter(!Exclude)
+
+# Let's do some column renaming for convenience sake
+bdproto <- bdproto %>% rename(family_id = FamilyID)
+bdproto <- bdproto %>% rename(InventoryID = BdprotoID)
+```
+
+```{r}
+# load and manipulate segbo
+segbo <- read_csv("segbo_with_glottolog.csv")
+segbo_inventories <- segbo %>%
+  select(InventoryID) %>%
+  distinct()
+segbo <- segbo %>% select(BorrowedSound)
+segbo <- segbo %>% rename(Phoneme = BorrowedSound)
+```
+
+First, let's get the union of the sets of segments.
+
+```{r}
+all_segments_long <- as_tibble(union(bdproto$Phoneme, phoible$Phoneme))
+all_segments_long <- as_tibble(union(all_segments_long$value, segbo$Phoneme))
+all_segments_long <- all_segments_long %>% rename(Phoneme = value)
+```
+
+Next, let's merge in the counts from the two databases.
+
+```{r}
+phoible_segments <- phoible %>%
+  select(Phoneme) %>%
+  group_by(Phoneme) %>%
+  summarize(phoible = n())
+bdproto_segments <- bdproto %>%
+  select(Phoneme) %>%
+  group_by(Phoneme) %>%
+  summarize(bdproto = n())
+segbo_segments <- segbo %>%
+  select(Phoneme) %>%
+  group_by(Phoneme) %>%
+  summarize(segbo = n())
+
+all_segments_long <- left_join(all_segments_long, phoible_segments)
+all_segments_long <- left_join(all_segments_long, bdproto_segments)
+all_segments_long <- left_join(all_segments_long, segbo_segments)
+```
+
+Let's sort them by frequency in phoible for convenience.
+
+```{r}
+all_segments_long <- all_segments_long %>% arrange(desc(phoible))
+all_segments_long %>%
+  head() %>%
+  kable()
+```
+
+Are there any NAs in phoible and bdproto now that we've added segbo, i.e. are there segments in segbo not in the other two data sets? Yes there is. TODO: what to do about these?
+
+```{r}
+all_segments_long %>% filter(is.na(phoible) & is.na(bdproto))
+```
+
+Now we have a dataframe of phonemes and their counts in phoible and bdproto and segbo. Some segments will be missing in phoible (they are not in bdproto) and vice versa. 
+
+```{r}
+all_segments_long %>%
+  filter(is.na(phoible)) %>%
+  head() %>%
+  kable()
+```
+
+Let's replace all NAs with zeros.
+
+```{r}
+all_segments_long[is.na(all_segments_long)] <- 0
+```
+
+Check it.
+
+```{r}
+all_segments_long %>% filter(is.na(phoible))
+```
+
+Now let's add the probability of a segment's occurrence.
+
+```{r}
+all_segments_long$phoible_prob <- all_segments_long$phoible / sum(all_segments_long$phoible)
+all_segments_long$bdproto_prob <- all_segments_long$bdproto / sum(all_segments_long$bdproto)
+all_segments_long$segbo_prob <- all_segments_long$segbo / sum(all_segments_long$segbo)
+```
+
+
+```{r}
+# Now let's reshape the data into a wide format. We can simply transpose it.
+# n <- all_segments_long$Phoneme
+# all_segments_wide <- as.data.frame(t(all_segments_long[,-1]))
+# colnames(all_segments_wide) <- n
+```
+
+Let's add the cross-linguistic frequencies of each segment within each database.
+
+```{r}
+all_segments_long$phoible_freq <- all_segments_long$phoible / length(unique(phoible$InventoryID))
+all_segments_long$bdproto_freq <- all_segments_long$bdproto / length(unique(bdproto$InventoryID))
+all_segments_long$segbo_freq <- all_segments_long$segbo / nrow(segbo_inventories)
+```
+
+Have a look.
+
+```{r}
+head(all_segments_long) %>% kable()
+```
+
+Some clean up.
+
+```{r}
+rm(bdproto, bdproto_segments, exclude, inventories, phoible, phoible_segments, n, segbo, segbo_segments, segbo_inventories)
+```
+
+
+# Get segments in the subset of matching language families for bdproto and phoible
+
+Load phoible and add the glottolog family info.
+
+```{r}
+load("./phoible.RData")
+load("./glottolog-families-isolates.Rdata")
+
+# Add the ISO data
+phoible_enriched <- merge(phoible, families.glottocodes[, c("iso639P3code", "family_id")], by.x = "ISO6393", by.y = "iso639P3code")
+rm(phoible, languages.geo, isolates, families.counts, families.glottocodes)
+```
+
+
+Load bdproto and exclude data points like Nostratic.
+
+```{r}
+load("bdproto.Rdata")
+bdproto <- inventories
+exclude <- read_csv("what_to_exclude.csv")
+bdproto <- left_join(bdproto, exclude)
+bdproto <- bdproto %>% filter(!Exclude)
+
+# Let's do some column renaming for convenience sake
+bdproto <- bdproto %>% rename(family_id = FamilyID)
+bdproto <- bdproto %>% rename(InventoryID = BdprotoID)
+bdproto <- bdproto %>% filter(!is.na(family_id))
+rm(inventories, exclude)
+```
+
+Let's check how many language families in each source.
+
+```{r}
+length(table(phoible_enriched$family_id))
+length(table(bdproto$family_id))
+```
+
+To make the samples comparable, let's remove all families in phoible not in bdproto. (This could simply be done with taking the intersection of the family_id variable...)
+
+```{r}
+phoible_enriched <- phoible_enriched %>% filter(family_id %in% bdproto$family_id)
+length(table(phoible_enriched$family_id))
+phoible_family_ids <- phoible_enriched %>%
+  select(family_id) %>%
+  distinct()
+```
+
+There are also reconstructions in bdproto that have no daughter languages represented in phoible, e.g. Lakes Plain, Yokutsan, and Takelman. Other entries are ancient languages, known from corpora, which are now extinct (Elamian, Hattian, Hurro-Urartian and Sumerian).
+
+```{r}
+bdproto_family_ids <- bdproto %>%
+  select(LanguageFamilyRoot, family_id, Type) %>%
+  distinct()
+not_in_phoible <- bdproto_family_ids[which(!(bdproto_family_ids$family_id %in% phoible_family_ids$family_id)), ]
+not_in_phoible %>% kable()
+```
+
+Let's remove these from bdproto for the analysis.
+
+```{r}
+bdproto <- bdproto %>% filter(!(family_id %in% not_in_phoible$family_id))
+```
+
+Double check that both datasets have the same number of language families.
+
+```{r}
+length(table(phoible_enriched$family_id))
+length(table(bdproto$family_id))
+rm(not_in_phoible, phoible_family_ids, bdproto_family_ids)
+```
+
+Now, let's get the union of the two sets of segments.
+
+```{r}
+families_segments_long <- as_tibble(union(bdproto$Phoneme, phoible_enriched$Phoneme))
+families_segments_long <- families_segments_long %>% rename(Phoneme = value)
+```
+
+Next, let's merge in the counts from the two databases.
+
+```{r}
+phoible_segments <- phoible_enriched %>%
+  select(Phoneme) %>%
+  group_by(Phoneme) %>%
+  summarize(phoible = n())
+bdproto_segments <- bdproto %>%
+  select(Phoneme) %>%
+  group_by(Phoneme) %>%
+  summarize(bdproto = n())
+families_segments_long <- left_join(families_segments_long, phoible_segments)
+families_segments_long <- left_join(families_segments_long, bdproto_segments)
+```
+
+Let's sort them by frequency in phoible for convenience.
+
+```{r}
+families_segments_long <- families_segments_long %>% arrange(desc(phoible))
+families_segments_long %>%
+  head() %>%
+  kable()
+```
+
+Now we have a dataframe of phonemes and their counts in phoible and bdproto. Some segments will be missing in phoible (they are not in bdproto) and vice versa. 
+
+```{r}
+families_segments_long %>%
+  filter(is.na(phoible)) %>%
+  head() %>%
+  kable()
+```
+
+Let's replace all NAs with zeros.
+
+```{r}
+families_segments_long[is.na(families_segments_long)] <- 0
+```
+
+Check it.
+
+```{r}
+families_segments_long %>% filter(is.na(phoible))
+```
+
+Now let's add the probability of a segment's occurrence.
+
+```{r}
+families_segments_long$phoible_prob <- families_segments_long$phoible / sum(families_segments_long$phoible)
+families_segments_long$bdproto_prob <- families_segments_long$bdproto / sum(families_segments_long$bdproto)
+families_segments_long %>%
+  head() %>%
+  kable()
+```
+
+
+```{r}
+# Now let's reshape the data into a wide format. We can simply transpose it.
+# n <- families_segments_long$Phoneme
+# families_segments_wide <- as.data.frame(t(families_segments_long[,-1]))
+# colnames(all_segments_wide) <- n
+```
+
+Some clean up.
+
+```{r}
+rm(bdproto, bdproto_segments, exclude, inventories, phoible_enriched, phoible_segments, n)
+```
+
+
+# Get segments in the intersection of all three databases
+
+Load phoible and add the glottolog family info.
+
+```{r}
+load("./phoible.RData")
+load("./glottolog-families-isolates.Rdata")
+
+# Add the ISO data
+phoible_enriched <- merge(phoible, families.glottocodes[, c("iso639P3code", "family_id")], by.x = "ISO6393", by.y = "iso639P3code")
+rm(phoible, languages.geo, isolates, families.counts, families.glottocodes)
+```
+
+Load segbo and the glottolog family info.
+
+```{r}
+# load and extend segbo
+segbo <- read_csv("segbo_with_glottolog.csv")
+segbo <- segbo %>% rename(Phoneme = BorrowedSound)
+extra <- read_csv("segbo_missing_codes.csv")
+
+# Quick hack to get in the hand curated codes
+library(ddpcr)
+segbo_enriched <- merge_dfs_overwrite_col(segbo, extra, cols = "family_id", bycol = "LanguageName")
+rm(segbo, extra)
+
+segbo_enriched %>% filter(is.na(Phoneme))
+```
+
+Load bdproto and exclude data points like Nostratic.
+
+```{r}
+load("bdproto.Rdata")
+bdproto <- inventories
+exclude <- read_csv("what_to_exclude.csv")
+bdproto <- left_join(bdproto, exclude)
+bdproto <- bdproto %>% filter(!Exclude)
+
+# Let's do some column renaming for convenience sake
+bdproto <- bdproto %>% rename(family_id = FamilyID)
+bdproto <- bdproto %>% rename(InventoryID = BdprotoID)
+bdproto <- bdproto %>% filter(!is.na(family_id))
+rm(inventories, exclude)
+```
+
+Let's check how many language families in each source.
+
+```{r}
+length(table(phoible_enriched$family_id))
+length(table(bdproto$family_id))
+length(table(segbo_enriched$family_id))
+```
+
+Let's see what's shared across all three.
+
+```{r}
+families_shared <- as_tibble(union(phoible_enriched$family_id, bdproto$family_id))
+families_shared <- as_tibble(union(families_shared$value, segbo_enriched$family_id))
+families_shared
+```
+
+Which families are in the intersection of all three? Much less.
+
+```{r}
+intersected_families <- Reduce(intersect, list(phoible_enriched$family_id, bdproto$family_id, segbo_enriched$family_id))
+intersected_families
+```
+
+To make the samples comparable, let's remove all families not in the intersection of each database.
+
+```{r}
+phoible_enriched <- phoible_enriched %>% filter(family_id %in% intersected_families)
+length(table(phoible_enriched$family_id))
+
+bdproto <- bdproto %>% filter(family_id %in% intersected_families)
+
+segbo_enriched <- segbo_enriched %>% filter(family_id %in% intersected_families)
+```
+
+Double check that both datasets have the same number of language families.
+
+```{r}
+length(table(phoible_enriched$family_id))
+length(table(bdproto$family_id))
+length(table(segbo_enriched$family_id))
+```
+
+Now, let's get the union of all the segments.
+
+```{r}
+intersect_families_segments_long <- as.tibble(Reduce(union, list(bdproto$Phoneme, phoible_enriched$Phoneme, segbo_enriched$Phoneme)))
+intersect_families_segments_long <- intersect_families_segments_long %>% rename(Phoneme = value)
+intersect_families_segments_long %>% filter(is.na(Phoneme))
+```
+
+Next, let's merge in the counts from the databases.
+
+```{r}
+phoible_segments <- phoible_enriched %>%
+  select(Phoneme) %>%
+  group_by(Phoneme) %>%
+  summarize(phoible = n())
+bdproto_segments <- bdproto %>%
+  select(Phoneme) %>%
+  group_by(Phoneme) %>%
+  summarize(bdproto = n())
+segbo_segments <- segbo_enriched %>%
+  select(Phoneme) %>%
+  group_by(Phoneme) %>%
+  summarize(segbo = n())
+
+intersect_families_segments_long <- left_join(intersect_families_segments_long, phoible_segments)
+intersect_families_segments_long <- left_join(intersect_families_segments_long, bdproto_segments)
+intersect_families_segments_long <- left_join(intersect_families_segments_long, segbo_segments)
+```
+
+Let's sort them by frequency in phoible for convenience.
+
+```{r}
+intersect_families_segments_long <- intersect_families_segments_long %>% arrange(desc(phoible))
+intersect_families_segments_long %>%
+  head() %>%
+  kable()
+```
+
+Let's replace all NAs with zeros.
+
+```{r}
+intersect_families_segments_long %>% filter(is.na(Phoneme))
+intersect_families_segments_long[is.na(intersect_families_segments_long)] <- 0
+```
+
+Check it.
+
+```{r}
+intersect_families_segments_long %>% filter(is.na(phoible))
+```
+
+Now let's add the probability of a segment's occurrence.
+
+```{r}
+intersect_families_segments_long$phoible_prob <- intersect_families_segments_long$phoible / sum(intersect_families_segments_long$phoible)
+intersect_families_segments_long$bdproto_prob <- intersect_families_segments_long$bdproto / sum(intersect_families_segments_long$bdproto)
+intersect_families_segments_long$segbo_prob <- intersect_families_segments_long$segbo / sum(intersect_families_segments_long$segbo)
+intersect_families_segments_long %>%
+  head() %>%
+  kable()
+```
+
+Some clean up.
+
+```{r}
+rm(bdproto, bdproto_segments, phoible_enriched, phoible_segments, segbo_enriched, segbo_segments, families_shared)
+```
+
+
+# Write the dataframes to disk
+
+Let's save the data frames in an RData file for the analyses.
+
+```{r}
+save(all_dbs_all_segments, all_dbs_all_segments, all_segments_long, families_segments_long, intersect_families_segments_long, file = "dfs_for_analysis_csv_vs.RData")
+```
+
+
+# References
+
