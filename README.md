@@ -2,7 +2,7 @@
 
 Supplementary materials for "Inferring recent evolutionary changes in speech sounds".
 
-Folder contains:
+Each folder contains:
 
 * [data_preparation](data_preparation/data_prep.md): data preparation pipeline
 
