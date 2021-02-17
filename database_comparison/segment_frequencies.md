@@ -2,13 +2,13 @@ Comparison of segment frequencies in BDPROTO, PHOIBLE and SegBo
 ================
 Steven Moran
 
-06 December, 2020
+13 December, 2020
 
 # Overview
 
 Plot the raw frequency distributions from the three databases.
 
-Load some R libraries.
+Load the R libraries.
 
 ``` r
 library(tidyverse)
@@ -324,7 +324,7 @@ print(xtable(t), include.rownames = FALSE)
 ```
 
     ## % latex table generated in R 4.0.3 by xtable 1.8-4 package
-    ## % Sun Dec  6 12:46:25 2020
+    ## % Sun Dec 13 13:49:30 2020
     ## \begin{table}[ht]
     ## \centering
     ## \begin{tabular}{lrrrr}

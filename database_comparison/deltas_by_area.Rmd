@@ -190,7 +190,7 @@ phoible_no_sa$macroarea <- "South America"
 ```
 
 
-Drop the count and rbind them the area-specific dataframes.
+Drop the count and `rbind` them into area-specific dataframes.
 
 ```{r}
 africa <- africa %>% select(macroarea, Phoneme, SegmentClass, freq)

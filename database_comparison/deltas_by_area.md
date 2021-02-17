@@ -2,7 +2,7 @@ Get greatest deltas in segment coverage by macroarea
 ================
 Steven Moran
 
-06 December, 2020
+13 December, 2020
 
 ``` r
 library(tidyverse)
@@ -13,8 +13,8 @@ library(xtable)
 # Overview
 
 This script calculates the frequency of segments in
-[PHOIBLE](https://phoible.org/) by macroarea and the differences between
-the two.
+[PHOIBLE](https://phoible.org/) (Moran and McCloy 2019) by macroarea and
+the differences between the two.
 
 Load the PHOIBLE development data. For reproducibility purposes, we use
 use the PHOIBLE respository at branch
@@ -24,8 +24,9 @@ use the PHOIBLE respository at branch
 phoible <- read_csv(url("https://raw.githubusercontent.com/phoible/dev/cf5122362b2b85e9724474dbddd67291a442b8fa/data/phoible.csv"), col_types = c(InventoryID = "i", Marginal = "l", .default = "c"))
 ```
 
-Load the [Glottolog data](https://glottolog.org/meta/downloads), which
-contains the macroarea classifications for language..
+Load the [Glottolog data](https://glottolog.org/meta/downloads)
+(Hammarström et al. 2020), which contains the macroarea classifications
+for language.
 
 ``` r
 glottolog <- read_csv("https://cdstar.shh.mpg.de/bitstreams/EAEA0-D501-DBB8-65C4-0/languages_and_dialects_geo.csv")
@@ -317,7 +318,7 @@ phoible_no_sa$freq <- phoible_no_sa$count / total
 phoible_no_sa$macroarea <- "South America"
 ```
 
-Drop the count and rbind them the area-specific dataframes.
+Drop the count and `rbind` them into area-specific dataframes.
 
 ``` r
 africa <- africa %>% select(macroarea, Phoneme, SegmentClass, freq)
@@ -789,7 +790,7 @@ print(xtable(pos), hline.after = c(-1), add.to.row = add.to.row, tabular.environ
     ## FALSE.
 
     ## % latex table generated in R 4.0.3 by xtable 1.8-4 package
-    ## % Sun Dec  6 12:46:44 2020
+    ## % Sun Dec 13 13:58:59 2020
     ## \begin{longtable}{llrrrrr}
     ##   \hline
     ## macroarea & Phoneme & freq & phoible\_freq & delta & freq\_phoible\_no\_macroarea & delta\_no\_macroarea \\ 
@@ -874,7 +875,7 @@ print(xtable(neg), hline.after = c(-1), add.to.row = add.to.row, tabular.environ
     ## FALSE.
 
     ## % latex table generated in R 4.0.3 by xtable 1.8-4 package
-    ## % Sun Dec  6 12:46:44 2020
+    ## % Sun Dec 13 13:58:59 2020
     ## \begin{longtable}{llrrrrr}
     ##   \hline
     ## macroarea & Phoneme & freq & phoible\_freq & delta & freq\_phoible\_no\_macroarea & delta\_no\_macroarea \\ 
@@ -953,7 +954,7 @@ print(xtable(all %>% group_by(macroarea) %>% slice_max(order_by = delta, n = 10)
 ```
 
     ## % latex table generated in R 4.0.3 by xtable 1.8-4 package
-    ## % Sun Dec  6 12:46:44 2020
+    ## % Sun Dec 13 13:58:59 2020
     ## \begin{table}[ht]
     ## \centering
     ## \begin{tabular}{rlllrrrrr}
@@ -1029,7 +1030,7 @@ print(xtable(all %>% group_by(macroarea) %>% slice_min(order_by = delta, n = 10)
 ```
 
     ## % latex table generated in R 4.0.3 by xtable 1.8-4 package
-    ## % Sun Dec  6 12:46:45 2020
+    ## % Sun Dec 13 13:58:59 2020
     ## \begin{table}[ht]
     ## \centering
     ## \begin{tabular}{rlllrrrrr}
@@ -1099,3 +1100,26 @@ print(xtable(all %>% group_by(macroarea) %>% slice_min(order_by = delta, n = 10)
     ##    \hline
     ## \end{tabular}
     ## \end{table}
+
+# References
+
+<div id="refs" class="references csl-bib-body hanging-indent">
+
+<div id="ref-glottolog" class="csl-entry">
+
+Hammarström, Harald, Robert Forkel, Martin Haspelmath, and Sebastian
+Bank. 2020. *Glottolog 4.2.1*. Jena: Max Planck Institute for the
+Science of Human History; Max Planck Institute for the Science of Human
+History. <https://doi.org/10.5281/zenodo.3754591>.
+
+</div>
+
+<div id="ref-phoible" class="csl-entry">
+
+Moran, Steven, and Daniel McCloy, eds. 2019. *PHOIBLE 2.0*. Jena: Max
+Planck Institute for the Science of Human History.
+<https://phoible.org/>.
+
+</div>
+
+</div>
