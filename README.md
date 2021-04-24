@@ -2,7 +2,7 @@
 
 Supplementary materials for "Inferring recent evolutionary changes in speech sounds".
 
-Moran Steven, Lester Nicholas A. and Grossman Eitan. 2021 .Inferring recent evolutionary changes in speech sounds. Phil. Trans. R. Soc. B., 376. 20200198. [https://doi.org/10.1098/rstb.2020.0198](https://doi.org/10.1098/rstb.2020.0198).
+Moran, Steven, Nicholas A. Lester and Eitan Grossman. 2021. Inferring recent evolutionary changes in speech sounds. Philosophical Transactions of the Royal Society B, 376. 20200198. [https://doi.org/10.1098/rstb.2020.0198](https://doi.org/10.1098/rstb.2020.0198).
 
 Each folder contains:
 
